@@ -39,6 +39,19 @@ python3 server.py
 * PUT
 * DELETE
 
+## Authentication
+
+* Use Cookie to authenticate user
+
+* Format:
+
+```
+Cookie: user=admin
+```
+
+```
+Cookie: user=ja-errorpro
+```
 
 
 ## Available Content Types
