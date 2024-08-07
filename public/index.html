@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>This is my new WebServer OwO</title>
+</head>
+
+<body>
+    <h1>這是我的新網頁</h1>
+    <p>你可以在這裡添加新的內容</p>
+    <div class="show_user_auth">
+    </div>
+    <a href="/login">Change Your Cred</a><br>
+    <a href="/dashboard">這是舊網頁</a><br>
+    <div class="upload_file">
+    </div>
+    <script>
+        // Get Cookie
+        function getCookie(name) {
+            var cookieArr = document.cookie.split(';');
+            for (var i = 0; i < cookieArr.length; i++) {
+                var cookiePair = cookieArr[i].split('=');
+                if (name == cookiePair[0].trim()) {
+                    return decodeURIComponent(cookiePair[1]);
+                }
+            }
+            return null;
+        }
+        // print user auth
+        var user_auth = getCookie('user');
+        var show_user_auth = document.querySelector('.show_user_auth');
+        show_user_auth.innerHTML += '<h2>你現在的身分是：' + user_auth + '</h2>';
+        // if user is admin, show upload file
+        if (user_auth == 'admin') {
+            var upload_file = document.querySelector('.upload_file');
+            upload_file.innerHTML += '<form action="/upload" method="post" enctype="multipart/form-data"><input type="file" name="file"><input type="submit" value="上傳檔案"></form>';
+        }
+    </script>
+</body>
+
+</html>

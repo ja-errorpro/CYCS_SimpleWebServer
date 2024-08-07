@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Success Login</title>
+</head>
+
+<body>
+    <h1>Success Login</h1>
+    <p>Hi!</p>
+    <div id="username"></div>
+    <p>You have successfully logged in.</p>
+    <p><a href="/">Return to home page</a></p>
+    <script>
+        // Get Cookie
+        function getCookie(name) {
+            var cookieArr = document.cookie.split(';');
+            for (var i = 0; i < cookieArr.length; i++) {
+                var cookiePair = cookieArr[i].split('=');
+                if (name == cookiePair[0].trim()) {
+                    return decodeURIComponent(cookiePair[1]);
+                }
+            }
+            return null;
+        }
+        // print user auth
+        var user_auth = getCookie('user');
+        var show_user_auth = document.querySelector('#username');
+        show_user_auth.innerHTML += user_auth;
+    </script>
+</body>
+
+</html>
