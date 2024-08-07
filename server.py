@@ -9,6 +9,7 @@ import socket
 HOST = '0.0.0.0'
 PORT = 8000
 Not_Found_Page = 'public/404.html'
+ENCODING = 'iso-8859-1'
 
 class HTTPServer:
 
@@ -57,7 +58,7 @@ class HTTPServer:
             self.socket.close()
 
     def server_entrance(self):
-        print('Server is running on port ', self.port)
+        print(f'Server is running on {self.host}:{self.port}')
         while True:
             # Get request
             try:
@@ -167,7 +168,7 @@ class HTTPServer:
                 try:
                     response = self.protocol + self.responses[200] + self._get_content_type(self.path)
                     page = open(self.path.strip('/'), 'rb')
-                    response = response.encode() + page.read()
+                    response = response.encode(ENCODING) + page.read()
                     return response
                 except FileNotFoundError:
                     return self._response_404()
@@ -208,7 +209,7 @@ class HTTPServer:
                         break
                 if file_name:
                     with open('uploads/' + file_name, 'wb') as f:
-                        f.write(body_content.encode('iso-8859-1'))
+                        f.write(body_content.encode(ENCODING))
             response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
             page = open('public/success_upload.html', 'r', encoding='utf-8')
             response += page.read()
@@ -254,7 +255,7 @@ class HTTPServer:
 
         try:
             file = open(path, 'wb')
-            file.write(body.encode('iso-8859-1'))
+            file.write(body.encode(ENCODING))
             file.close()
         except PermissionError:
             return self.protocol + self.responses[400] # Cannot write to file
@@ -354,13 +355,13 @@ class HTTPServer:
     def _process_request(self, client_socket, client_address):
         http_data = client_socket.recv(4096)
         #print('Request: \n', http_data)
-        self.headers = self._parse_header(str(http_data, 'iso-8859-1'))
+        self.headers = self._parse_header(str(http_data, ENCODING))
         content_length = int(self.headers.get('Content-Length', 0))
         while len(http_data) < content_length:
             http_data += client_socket.recv(4096)
 
-        http_data = str(http_data, 'iso-8859-1')
-        print('Request: ', http_data)
+        http_data = str(http_data, ENCODING)
+        print('Request: ', http_data if len(http_data) < 1000 else http_data[:1000])
 
        # http_data = http_data.decode()
         method_path_version = http_data.split('\r\n')[0].split(' ')
@@ -368,24 +369,24 @@ class HTTPServer:
             method, path, version = method_path_version
             if version[:5] != 'HTTP/':
                 print("Responsed: 400 Bad Request")
-                client_socket.sendall((self.protocol + self.responses[400]).encode())
+                client_socket.sendall((self.protocol + self.responses[400]).encode(ENCODING))
                 return
             try:
                 version = float(version[5:])
                 if version < 1.0 or version > 1.1:
                     print("Responsed: 505 HTTP Version Not Supported")
-                    client_socket.sendall((self.protocol + self.responses[505]).encode())
+                    client_socket.sendall((self.protocol + self.responses[505]).encode(ENCODING))
                     return
             except ValueError:
                 print("Responsed: 400 Bad Request")
-                client_socket.sendall((self.protocol + self.responses[400]).encode())
+                client_socket.sendall((self.protocol + self.responses[400]).encode(ENCODING))
                 return
         elif len(method_path_version) == 2:
             method, path = method_path_version
             version = 'HTTP/1.1'
         else:
             print("Responsed: 400 Bad Request")
-            client_socket.sendall((self.protocol + self.responses[400]).encode())
+            client_socket.sendall((self.protocol + self.responses[400]).encode(ENCODING))
             return
         
         self.method = method
@@ -403,7 +404,7 @@ class HTTPServer:
         self.version = version
 
         response = self._get_response(http_data)
-        print("Responsed: ", response)
+        print("Responsed: ", response if len(response) < 1000 else response[:1000])
         client_socket.sendall(response.encode() if type(response) == str else response)
 
 
