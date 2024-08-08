@@ -167,7 +167,7 @@ class HTTPServer:
             except FileNotFoundError:
                 try:
                     response = self.protocol + self.responses[200] + self._get_content_type(self.path)
-                    page = open(self.path.strip('/'), 'rb')
+                    page = open(self.path[1:], 'rb')
                     response = response.encode(ENCODING) + page.read()
                     return response
                 except FileNotFoundError:
