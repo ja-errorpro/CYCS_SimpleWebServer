@@ -103,6 +103,10 @@ class HTTPServer:
         response += page.read()
         return response
     
+    def _response_400(self, reason = 'Bad Request'):
+        print(f"Responsed: 400 Bad Request ({reason})")
+        return self.protocol + self.responses[400]
+    
     def _get_favicon(self):
         return self._response_404('Favicon Not Found') # TODO
     
@@ -184,81 +188,89 @@ class HTTPServer:
     def _do_POST(self, http_data):
         
         if self.path != '/upload' and self.path != '/login':
-            return self._response_404('Invalid POST Request')
+            return self._response_404()
         
-        
-        header_segments, body = http_data.split('\r\n\r\n', 1)
-        content_type = self.headers.get('Content-Type', '')
-        content_length = int(self.headers.get('Content-Length', 0))
+        try:
+            header_segments, body = http_data.split('\r\n\r\n', 1)
+            content_type = self.headers.get('Content-Type', '')
+            content_length = int(self.headers.get('Content-Length', 0))
 
-        if 'multipart/form-data;' in content_type:
-            if not self.is_admin():
-                return self._response_404('Only Admin can upload files')
-            boundary = content_type.split('boundary=')[1]
-            body = body.split('--' + boundary)
-            for b in body:
-                if (not b) or b == '' or b.strip() == '--':
-                    continue
-                print('Body: ', b, '<<')
-                body_headers, body_content = b.split('\r\n\r\n', 1)
-                body_headers = body_headers.split('\r\n')
-                file_name = ''
-                for header in body_headers:
-                    if 'filename=' in header:
-                        file_name = header.split('filename="')[1].split('"')[0]
-                        break
-                if file_name:
-                    with open('uploads/' + file_name, 'wb') as f:
-                        f.write(body_content.encode(ENCODING))
-            response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
-            page = open('public/success_upload.html', 'r', encoding='utf-8')
-            response += page.read()
-            return response
-        elif 'application/x-www-form-urlencoded' in content_type:
-            form_data = {}
-            for data in body.split('&'):
-                if (not data) or data == '':
-                    continue
-                key, value = data.split('=')
-                form_data[key] = value
-            if self.path == '/login':
-                form_username = form_data.get('username', '')
-                if form_username != '':
-                    response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
-                    response = response.rstrip('\r\n') + f'\r\nSet-Cookie: user={form_username}\r\n\r\n'
-                    page = open('public/success_login.html', 'r', encoding='utf-8')
-                    response += page.read()
+            if 'multipart/form-data;' in content_type:
+                if not self.is_admin():
+                    return self._response_404('Only Admin can upload files')
+                boundary = content_type.split('boundary=')[1]
+                body = body.split('--' + boundary)
+                for b in body:
+                    if (not b) or b == '' or b.strip() == '--':
+                        continue
+                    print('Body: ', b, '<<')
+                    body_headers, body_content = b.split('\r\n\r\n', 1)
+                    body_headers = body_headers.split('\r\n')
+                    file_name = ''
+                    for header in body_headers:
+                        if 'filename=' in header:
+                            file_name = header.split('filename="')[1].split('"')[0]
+                            break
+                    if file_name:
+                        with open('uploads/' + file_name, 'wb') as f:
+                            f.write(body_content.encode(ENCODING))
+                response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
+                page = open('public/success_upload.html', 'r', encoding='utf-8')
+                response += page.read()
+                return response
+            elif 'application/x-www-form-urlencoded' in content_type:
+                form_data = {}
+                
+                for data in body.split('&'):
+                    if (not data) or data == '':
+                        continue
+                    try:
+                        key, value = data.split('=', 1)
+                        form_data[key] = value
+                    except ValueError:
+                        pass
+                
 
-                    return response
+                if self.path == '/login':
+                    form_username = form_data.get('username', '')
+                    if form_username != '':
+                        response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
+                        response = response.rstrip('\r\n') + f'\r\nSet-Cookie: user={form_username}\r\n\r\n'
+                        page = open('public/success_login.html', 'r', encoding='utf-8')
+                        response += page.read()
+
+                        return response
+                    else:
+                        return self._response_400('Missing Parameters')
                 else:
-                    return self.protocol + self.responses[400]
+                    return self._response_404()
+            # TODO: json, text/plain
             else:
-                return self._response_404('Invalid POST Request')
-            
-        # TODO: json, text/plain
-        else:
-            return self._response_404('Invalid POST Request')
+                return self._response_400('Unsupported Content-Type')
 
-        
+        except (ValueError, IndexError):
+            return self._response_400()
             
 
 
     def _do_PUT(self, http_data):
 
         if not self.is_admin():
-            return self.protocol + self.responses[400]
+            return self._response_400()
 
         if self.path == '/':
-            return self.protocol + self.responses[400] # Cannot PUT to root
+            return self._response_400() # Cannot PUT to root
+        
         path = '.' + self.path
-        header_segments, body = http_data.split('\r\n\r\n', 1)
-
         try:
+            header_segments, body = http_data.split('\r\n\r\n', 1)
             file = open(path, 'wb')
             file.write(body.encode(ENCODING))
             file.close()
         except PermissionError:
-            return self.protocol + self.responses[400] # Cannot write to file
+            return self._response_404() # Cannot write to file
+        except ValueError:
+            return self._response_400()
         response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
         response += '<html><body><h1>File Updated</h1></body></html>'
         return response
@@ -267,10 +279,10 @@ class HTTPServer:
 
     def _do_DELETE(self):
         if not self.is_admin():
-            return self.protocol + self.responses[400]
+            return self._response_400()
 
         if self.path == '/':
-            return self.protocol + self.responses[400] # Cannot DELETE root
+            return self._response_400() # Cannot DELETE root
         path = '.' + self.path
         os = __import__('os')
         if os.path.exists(path):
@@ -366,39 +378,39 @@ class HTTPServer:
        # http_data = http_data.decode()
         method_path_version = http_data.split('\r\n')[0].split(' ')
         if len(method_path_version) == 3:
-            method, path, version = method_path_version
-            if version[:5] != 'HTTP/':
-                print("Responsed: 400 Bad Request")
-                client_socket.sendall((self.protocol + self.responses[400]).encode(ENCODING))
-                return
             try:
+                method, path, version = method_path_version
+                if version[:5] != 'HTTP/':
+                    client_socket.sendall(self._response_400().encode(ENCODING))
+                    return
                 version = float(version[5:])
                 if version < 1.0 or version > 1.1:
                     print("Responsed: 505 HTTP Version Not Supported")
                     client_socket.sendall((self.protocol + self.responses[505]).encode(ENCODING))
                     return
             except ValueError:
-                print("Responsed: 400 Bad Request")
-                client_socket.sendall((self.protocol + self.responses[400]).encode(ENCODING))
+                client_socket.sendall(self._response_400().encode(ENCODING))
                 return
         elif len(method_path_version) == 2:
             method, path = method_path_version
             version = 'HTTP/1.1'
         else:
-            print("Responsed: 400 Bad Request")
-            client_socket.sendall((self.protocol + self.responses[400]).encode(ENCODING))
+            client_socket.sendall(self._response_400().encode(ENCODING))
             return
         
         self.method = method
 
         # if there is argument in path, parse it
-        if '?' in path:
-            self.args = {}
-            path, arguments = path.split('?')
-            arguments = arguments.split('&')
-            for arg in arguments:
-                key, value = arg.split('=')
-                self.args[key] = value
+        try:
+            if '?' in path:
+                self.args = {}
+                path, arguments = path.split('?')
+                arguments = arguments.split('&')
+                for arg in arguments:
+                    key, value = arg.split('=')
+                    self.args[key] = value
+        except ValueError:
+            pass
 
         self.path = path
         self.version = version
