@@ -39,6 +39,14 @@ python3 server.py
 * PUT
 * DELETE
 
+## Conditional get
+
+* If-None-Match
+* If-Modified-Since
+* If-Match
+* If-Unmodified-Since
+* If-Range
+
 ## Authentication
 
 * Use Cookie to authenticate user

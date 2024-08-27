@@ -49,6 +49,7 @@ class HTTPServer:
         self.port = port
         self.request_queue_size = 5
         self.protocol = 'HTTP/1.1'
+        self.cache = {}
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.bind((self.host, self.port))
@@ -151,28 +152,52 @@ class HTTPServer:
             return self.CONTENT_TYPES['txt']
         
         
-
-    def _do_GET(self):
-        if self.path.startswith('/favicon'):
-            return self._get_favicon()
-        elif self.path == '/':
-            response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
+    def _read_file_to_response(self, response ,range_start = 0, range_end = 0):
+        if self.path == '/':
+            # Generate Etag and Last-Modified
+            self.cache["index"] = {'etag': 'index', 'last-modified': 'Sun, 1, Jan 2024 00:00:00 GMT'}
+            response += f'ETag: {self.cache["index"]["etag"]}\r\n'
+            response += f'Last-Modified: {self.cache["index"]["last-modified"]}\r\n'
+            response += self.CONTENT_TYPES['html']
             page = open('public/index.html', 'r', encoding='utf-8')
-            response += page.read()
+            if range_end > 0:
+                page.seek(int(range_start))
+                response += page.read(int(range_end) - int(range_start))
+            else:
+                response += page.read()
             return response
         elif self.path == '/dashboard':
-            return self.protocol + self.responses[301] + f'Location: http://{self.headers.get("Host").strip()}/login\r\n\r\n'
+            response = self.protocol + self.responses[301]
+            response += f'Location: http://{self.headers.get("Host").strip()}/login\r\n\r\n'
+            return response
         else:
             try:
-                response = self.protocol + self.responses[200] + self.CONTENT_TYPES['html']
                 page = open('public' + self.path + '.html', 'r', encoding='utf-8')
-                response += page.read()
+                self.cache[self.path] = {'etag': self.path, 'last-modified': 'Sun, 1, Jan 2024 00:00:00 GMT'}
+                response += f'ETag: {self.cache[self.path]["etag"]}\r\n'
+                response += f'Last-Modified: {self.cache[self.path]["last-modified"]}\r\n'
+                response += self.CONTENT_TYPES['html']
+                if range_end > 0:
+                    page.seek(int(range_start))
+                    response += page.read(int(range_end) - int(range_start))
+                else:
+                    response += page.read()
                 return response
             except FileNotFoundError:
                 try:
-                    response = self.protocol + self.responses[200] + self._get_content_type(self.path)
                     page = open(self.path[1:], 'rb')
-                    response = response.encode(ENCODING) + page.read()
+                    self.cache[self.path] = {'etag': self.path, 'last-modified': 'Sun, 1, Jan 2024 00:00:00 GMT'}
+                    response += f'ETag: {self.cache[self.path]["etag"]}\r\n'
+                    response += f'Last-Modified: {self.cache[self.path]["last-modified"]}\r\n'
+                    response += self._get_content_type(self.path)
+                    response = response.encode(ENCODING)
+
+                    if range_end > 0:
+                        page.seek(int(range_start))
+                        response += page.read(int(range_end) - int(range_start))
+                    else:
+                        response += page.read()
+
                     return response
                 except FileNotFoundError:
                     return self._response_404()
@@ -184,6 +209,47 @@ class HTTPServer:
                 return self._response_404('Permission Denied')
             except IsADirectoryError:
                 return self._response_404('Is a Directory')
+
+    def _do_GET(self):
+        if self.path.startswith('/favicon'):
+            return self._get_favicon()
+        
+        # Check if the file is in cache
+        if self.path in self.cache or (self.path == '/' and 'index' in self.cache):
+            if self.path == '/':
+                path = 'index'
+            else:
+                path = self.path
+            try:
+                if 'If-None-Match' in self.headers:
+                    if self.cache[path]['etag'] == self.headers['If-None-Match']:
+                        return self.protocol + ' 304 Not Modified\r\n\r\n'
+                if 'If-Modified-Since' in self.headers:
+                    if self.cache[path]['last-modified'] == self.headers['If-Modified-Since']:
+                        return self.protocol + ' 304 Not Modified\r\n\r\n'
+                if 'If-Match' in self.headers:
+                    if self.cache[path]['etag'] != self.headers['If-Match']:
+                        return self.protocol + ' 412 Precondition Failed\r\n\r\n'
+                if 'If-Unmodified-Since' in self.headers:
+                    if self.cache[path]['last-modified'] != self.headers['If-Unmodified-Since']:
+                        return self.protocol + ' 412 Precondition Failed\r\n\r\n'
+                if 'If-Range' in self.headers:
+                    if self.cache[path]['etag'] == self.headers['If-Range'] or self.cache[path]['last-modified'] == self.headers['If-Range']:
+                        response = self.protocol + ' 206 Partial Content\r\n'
+                        try:
+                            range_header = self.headers['Range'].split('=')[1]
+                            range_start, range_end = range_header.split('-')
+                            range_start = int(range_start)
+                            range_end = int(range_end)
+                            return self._read_file_to_response(response, range_start, range_end)
+                        except KeyError:
+                            return self.protocol + ' 416 Range Not Satisfiable\r\n\r\n'
+                        
+            except KeyError:
+                pass
+        
+        response = self.protocol + self.responses[200]
+        return self._read_file_to_response(response)
 
     def _do_POST(self, http_data):
         
@@ -359,7 +425,7 @@ class HTTPServer:
             if ':' not in header:
                 continue
             key, value = header.split(':', 1)
-            headers[key] = value
+            headers[key] = value.strip()
 
         return headers
         
